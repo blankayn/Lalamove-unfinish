@@ -404,7 +404,7 @@ function PlaceOrderTab() {
 /* ══════════════════════════════════════════
    MAIN DASHBOARD
 ══════════════════════════════════════════ */
-export default function Dashboard({ onLogout }) {
+export default function Dashboard({ onLogout, user }) {
   const [activeTab, setActiveTab] = useState('Place Order');
 
   return (
