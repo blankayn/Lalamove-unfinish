@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import Dashboard from './Dashboard';
-import IsometricVehicles from './IsometricVehicles';
+import vehiclesBg from '../assets/background.png';
 
 const EASE = [0.2, 0.8, 0.2, 1];
 
@@ -16,8 +16,13 @@ export default function LoginExperience() {
   return (
     <div className="relative h-screen w-screen overflow-hidden font-['Rubik']" style={{ background: '#f0eeeb' }}>
 
-      {/* Isometric vehicle illustration — left side */}
-      <IsometricVehicles />
+      {/* Vehicle illustration — left side, blended into background */}
+      <img
+        src={vehiclesBg}
+        alt=""
+        className="pointer-events-none absolute bottom-0 left-0 h-[85%] w-auto select-none object-contain"
+        style={{ mixBlendMode: 'multiply' }}
+      />
 
       {/* Center login card */}
       <div className="relative z-10 flex h-full items-center justify-center">
