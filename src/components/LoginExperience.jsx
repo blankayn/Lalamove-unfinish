@@ -5,7 +5,12 @@ import DriverDashboard from './DriverDashboard';
 import vehiclesBg from '../assets/bgremove.png';
 
 const EASE = [0.2, 0.8, 0.2, 1];
-const API = 'http://localhost/lalamove-api';
+
+// ── Static demo accounts (no XAMPP needed) ──
+const DEMO_ACCOUNTS = [
+  { role: 'customer', email: 'customer@demo.com', password: '123456', user: { id: 1, name: 'Juan Dela Cruz', email: 'customer@demo.com', phone: '09171234567', address: 'Makati City, Metro Manila', payment: 'GCash' } },
+  { role: 'driver',   email: 'driver@demo.com',   password: '123456', user: { id: 1, name: 'Pedro Santos',   email: 'driver@demo.com',   phone: '09181234567', status: 'Available' } },
+];
 
 export default function LoginExperience() {
   const [loggedIn, setLoggedIn]   = useState(false);
@@ -37,15 +42,26 @@ export default function LoginExperience() {
   const handleLogin = async (e) => {
     e.preventDefault();
     setError(''); setLoading(true);
+
+    // Check static demo accounts first
+    const match = DEMO_ACCOUNTS.find(a => a.role === role && a.email === email && a.password === password);
+    if (match) {
+      setTimeout(() => { setUser(match.user); setLoggedIn(true); setLoading(false); }, 500);
+      return;
+    }
+
+    // Fall back to XAMPP if running locally
     try {
-      const res  = await fetch(`${API}/login.php`, {
+      const res  = await fetch(`http://localhost/lalamove-api/login.php`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ role, email, password }),
       });
       const data = await res.json();
       if (data.success) { setUser(data.user); setLoggedIn(true); }
       else setError(data.message);
-    } catch { setError('Cannot connect. Make sure XAMPP is running.'); }
+    } catch {
+      setError('Invalid email or password.');
+    }
     setLoading(false);
   };
 
@@ -53,14 +69,16 @@ export default function LoginExperience() {
     e.preventDefault();
     setRegMsg('');
     try {
-      const res  = await fetch(`${API}/register.php`, {
+      const res  = await fetch(`http://localhost/lalamove-api/register.php`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ role, name: regName, email: regEmail, phone: regPhone, password: regPass, address: regAddr, license: regLic }),
       });
       const data = await res.json();
       setRegMsg(data.message);
       if (data.success) setTimeout(() => { setIsRegister(false); setRegMsg(''); }, 1500);
-    } catch { setRegMsg('Cannot connect. Make sure XAMPP is running.'); }
+    } catch {
+      setRegMsg('Registration requires local XAMPP setup. Use demo account to explore.');
+    }
   };
 
   return (
@@ -130,6 +148,13 @@ export default function LoginExperience() {
                   New to Lalamove?{' '}
                   <span onClick={() => { setIsRegister(true); setError(''); }} className="cursor-pointer font-semibold text-[#f36f21] hover:underline">Create a free account</span>
                 </p>
+                {/* Demo hint */}
+                <div className="rounded-lg border border-orange-200 bg-orange-50 p-3 text-xs text-slate-600">
+                  <p className="mb-1 font-semibold text-[#f36f21]">Demo Accounts</p>
+                  <p>👤 Customer: <span className="font-mono">customer@demo.com</span></p>
+                  <p>🚗 Driver: <span className="font-mono">driver@demo.com</span></p>
+                  <p className="mt-1 text-slate-400">Password: <span className="font-mono">123456</span></p>
+                </div>
               </motion.form>
             ) : (
               <motion.form key="register" initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }}

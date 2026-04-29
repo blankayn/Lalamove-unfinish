@@ -3,6 +3,11 @@ import SettingsPanel from './SettingsPanel';
 
 const API = 'http://localhost/lalamove-api';
 
+const DEMO_DRIVER_ORDERS = [
+  { Dlvry_Id: 2001, Dlvry_DrvId: null, Dlvry_Pick: 'Cubao, QC', Dlvry_Drop: 'Ortigas, Pasig', Dlvry_Item: 'Electronics', Dlvry_Dist: 4.8, Dlvry_Fee: 240, Dlvry_Stat: 'Pending', Dlvry_Time: '2026-04-29 10:00:00', customer_name: 'Maria Santos', customer_phone: '09171111111' },
+  { Dlvry_Id: 2002, Dlvry_DrvId: null, Dlvry_Pick: 'Alabang, Muntinlupa', Dlvry_Drop: 'Las Pinas City', Dlvry_Item: 'Food Package', Dlvry_Dist: 2.3, Dlvry_Fee: 115, Dlvry_Stat: 'Pending', Dlvry_Time: '2026-04-29 11:30:00', customer_name: 'Jose Reyes', customer_phone: '09172222222' },
+];
+
 const STATUS_COLOR = {
   Pending:   'bg-yellow-100 text-yellow-700',
   Ongoing:   'bg-blue-100 text-blue-700',
@@ -26,7 +31,8 @@ export default function DriverDashboard({ user, onLogout }) {
       });
       const data = await res.json();
       if (data.success) setOrders(data.orders);
-    } catch {}
+      else setOrders(DEMO_DRIVER_ORDERS);
+    } catch { setOrders(DEMO_DRIVER_ORDERS); }
     setLoading(false);
   };
 

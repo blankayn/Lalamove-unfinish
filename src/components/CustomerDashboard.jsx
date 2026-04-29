@@ -12,6 +12,17 @@ L.Icon.Default.mergeOptions({
 });
 
 const API = 'http://localhost/lalamove-api';
+
+// Static demo orders for Vercel preview
+const DEMO_ORDERS = [
+  { Dlvry_Id: 1001, Dlvry_CustId: 1, Dlvry_DrvId: 1, Dlvry_Pick: 'Makati City', Dlvry_Drop: 'BGC, Taguig', Dlvry_Item: 'Documents', Dlvry_Dist: 3.5, Dlvry_Fee: 175, Dlvry_Stat: 'Completed', Dlvry_Time: '2026-04-20 10:00:00', driver_name: 'Pedro Santos', driver_phone: '09181234567' },
+  { Dlvry_Id: 1002, Dlvry_CustId: 1, Dlvry_DrvId: null, Dlvry_Pick: 'Quezon City', Dlvry_Drop: 'Pasig City', Dlvry_Item: 'Groceries', Dlvry_Dist: 5.2, Dlvry_Fee: 260, Dlvry_Stat: 'Pending', Dlvry_Time: '2026-04-27 14:30:00', driver_name: null, driver_phone: null },
+  { Dlvry_Id: 1003, Dlvry_CustId: 1, Dlvry_DrvId: 1, Dlvry_Pick: 'Mandaluyong', Dlvry_Drop: 'Marikina City', Dlvry_Item: 'Clothes', Dlvry_Dist: 4.1, Dlvry_Fee: 205, Dlvry_Stat: 'Ongoing', Dlvry_Time: '2026-04-29 09:15:00', driver_name: 'Pedro Santos', driver_phone: '09181234567' },
+];
+
+const DEMO_PAYMENTS = [
+  { Pay_Id: 1, Pay_DlvryId: 1001, Pay_CustPaymeth: 'GCash', Pay_Amt: 175, Pay_Stat: 'Paid', Pay_Date: '2026-04-20 11:00:00', Dlvry_Pick: 'Makati City', Dlvry_Drop: 'BGC, Taguig', Dlvry_Stat: 'Completed' },
+];
 const TABS = ['Place Order', 'Records', 'Wallet', 'Drivers', 'Rewards'];
 const VEHICLES = [
   { label: 'Motorcycle', emoji: '🛵', fee: 50 },
@@ -161,7 +172,8 @@ function RecordsTab({ user }) {
       });
       const data = await res.json();
       if (data.success) setOrders(data.orders);
-    } catch {}
+      else setOrders(DEMO_ORDERS);
+    } catch { setOrders(DEMO_ORDERS); }
     setLoading(false);
   };
 
@@ -276,7 +288,8 @@ function WalletTab({ user }) {
         });
         const data = await res.json();
         if (data.success) { setPayments(data.payments); setTotal(data.total_spent); }
-      } catch {}
+        else { setPayments(DEMO_PAYMENTS); setTotal(175); }
+      } catch { setPayments(DEMO_PAYMENTS); setTotal(175); }
       setLoading(false);
     })();
   }, []);
