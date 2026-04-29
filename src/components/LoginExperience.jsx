@@ -148,13 +148,6 @@ export default function LoginExperience() {
                   New to Lalamove?{' '}
                   <span onClick={() => { setIsRegister(true); setError(''); }} className="cursor-pointer font-semibold text-[#f36f21] hover:underline">Create a free account</span>
                 </p>
-                {/* Demo hint */}
-                <div className="rounded-lg border border-orange-200 bg-orange-50 p-3 text-xs text-slate-600">
-                  <p className="mb-1 font-semibold text-[#f36f21]">Demo Accounts</p>
-                  <p>👤 Customer: <span className="font-mono">customer@demo.com</span></p>
-                  <p>🚗 Driver: <span className="font-mono">driver@demo.com</span></p>
-                  <p className="mt-1 text-slate-400">Password: <span className="font-mono">123456</span></p>
-                </div>
               </motion.form>
             ) : (
               <motion.form key="register" initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }}
