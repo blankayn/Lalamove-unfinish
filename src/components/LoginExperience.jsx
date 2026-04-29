@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import Dashboard from './Dashboard';
-import vehiclesBg from '../assets/background.png';
+import vehiclesBg from '../assets/bgremove.png';
 
 const EASE = [0.2, 0.8, 0.2, 1];
 
