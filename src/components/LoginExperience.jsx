@@ -14,14 +14,13 @@ export default function LoginExperience() {
   }
 
   return (
-    <div className="relative h-screen w-screen overflow-hidden font-['Rubik']" style={{ background: '#f0eeeb' }}>
+    <div className="relative h-screen w-screen overflow-hidden font-['Rubik']" style={{ background: '#edecea' }}>
 
-      {/* Vehicle illustration — left side, blended into background */}
+      {/* Vehicle illustration — left side, same bg color so it blends seamlessly */}
       <img
         src={vehiclesBg}
         alt=""
-        className="pointer-events-none absolute bottom-0 left-0 h-[85%] w-auto select-none object-contain"
-        style={{ mixBlendMode: 'multiply' }}
+        className="pointer-events-none absolute bottom-0 left-0 h-[90%] w-auto select-none object-contain"
       />
 
       {/* Center login card */}
@@ -42,21 +41,21 @@ export default function LoginExperience() {
             <span className="text-[22px] font-black uppercase tracking-tight text-[#f36f21]">LALAMOVE</span>
           </div>
 
-          {/* Country + phone row */}
-          <div className="mb-3 flex gap-2">
-            <div className="relative shrink-0">
-              <select className="h-11 w-[130px] appearance-none rounded border border-slate-300 bg-white pl-3 pr-7 text-sm text-slate-700 outline-none focus:border-[#f36f21]">
+          {/* Country + phone — stacked so placeholder never overflows */}
+          <div className="mb-3 flex flex-col gap-2">
+            <div className="relative">
+              <select className="h-11 w-full appearance-none rounded border border-slate-300 bg-white pl-3 pr-8 text-sm text-slate-700 outline-none focus:border-[#f36f21]">
                 <option>Philippines</option>
                 <option>Singapore</option>
                 <option>Malaysia</option>
                 <option>Hong Kong</option>
               </select>
-              <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-slate-400">▾</span>
+              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-slate-400">▾</span>
             </div>
             <input
               type="text"
               placeholder="Phone number or email"
-              className="h-11 flex-1 rounded border border-slate-300 px-3 text-sm text-slate-800 outline-none placeholder:text-slate-400 focus:border-[#f36f21]"
+              className="h-11 w-full rounded border border-slate-300 px-3 text-sm text-slate-800 outline-none placeholder:text-slate-400 focus:border-[#f36f21]"
             />
           </div>
 
