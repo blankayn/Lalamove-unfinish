@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useState } from 'react';
 import Dashboard from './Dashboard';
+import VehicleScene from './VehicleScene';
 
 const EASE = [0.2, 0.8, 0.2, 1];
 
@@ -13,16 +14,13 @@ export default function LoginExperience() {
   }
 
   return (
-    <main className="relative h-screen w-screen overflow-hidden bg-[#0a0d12] font-['Rubik']">
+    <main className="relative h-screen w-screen overflow-hidden bg-[#f7f4f0] font-['Rubik']">
 
-      {/* Spline 3D background */}
-      <spline-viewer
-        url="https://prod.spline.design/Cvr5wRDAZJctmVPj/scene.splinecode"
-        className="absolute inset-0 h-full w-full"
-      />
+      {/* Animated vehicle scene */}
+      <VehicleScene />
 
-      {/* Overlay */}
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/30 via-black/20 to-black/50" />
+      {/* Overlay — light tint so text stays readable */}
+      <div className="pointer-events-none absolute inset-0 bg-white/10" />
 
       {/* Navbar */}
       <nav className="absolute inset-x-0 top-0 z-40 flex items-center justify-between px-8 py-5">
@@ -38,10 +36,10 @@ export default function LoginExperience() {
       </nav>
 
       {/* Footer */}
-      <footer className="absolute inset-x-0 bottom-0 z-40 border-t border-white/10 bg-black/30 backdrop-blur-sm">
+      <footer className="absolute inset-x-0 bottom-0 z-40 border-t border-black/10 bg-white/60 backdrop-blur-sm">
         <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-8 py-4">
-          <p className="text-xs text-white/60">© 2026 Lalamove. All rights reserved.</p>
-          <nav className="flex gap-5 text-xs text-white/70">
+          <p className="text-xs text-slate-500">© 2026 Lalamove. All rights reserved.</p>
+          <nav className="flex gap-5 text-xs text-slate-500">
             <a href="#" className="transition hover:text-[#f36f21]">Services</a>
             <a href="#" className="transition hover:text-[#f36f21]">Pricing</a>
             <a href="#" className="transition hover:text-[#f36f21]">Contact</a>
