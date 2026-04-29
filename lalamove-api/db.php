@@ -2,15 +2,15 @@
 $host = 'localhost';
 $db   = 'lalamove';
 $user = 'root';
-$pass = '';  // XAMPP default has no password
-$port = 3306; // change to 3307 if you changed the port earlier
+$pass = '';
+$port = 3306;
 
 try {
     $pdo = new PDO("mysql:host=$host;port=$port;dbname=$db;charset=utf8", $user, $pass);
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 } catch (PDOException $e) {
     http_response_code(500);
-    echo json_encode(['success' => false, 'message' => 'Database connection failed: ' . $e->getMessage()]);
+    echo json_encode(['success' => false, 'message' => 'DB connection failed: ' . $e->getMessage()]);
     exit;
 }
 ?>
