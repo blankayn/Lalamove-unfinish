@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMapEvents } from 'react-leaflet';
+import DriverCard from './DriverCard';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
@@ -525,23 +526,100 @@ function WalletTab({ user }) {
 }
 
 /* ── Drivers ── */
+const DEMO_DRIVERS = [
+  { id: 1, name: 'Pedro Santos',   status: 'Available', vehicle_type: 'Motorcycle',            vehicle_emoji: '🛵', avg_rating: 4.8, total_deliveries: 132, completion_rate: 97, is_favorite: false, is_blocked: false },
+  { id: 2, name: 'Maria Reyes',    status: 'Busy',      vehicle_type: '200 kg Sedan',           vehicle_emoji: '🚗', avg_rating: 4.5, total_deliveries: 89,  completion_rate: 92, is_favorite: false, is_blocked: false },
+  { id: 3, name: 'Juan dela Cruz', status: 'Available', vehicle_type: '300 kg Small Crossover', vehicle_emoji: '🚙', avg_rating: 4.9, total_deliveries: 210, completion_rate: 99, is_favorite: false, is_blocked: false },
+  { id: 4, name: 'Ana Gomez',      status: 'Available', vehicle_type: '1000 kg Truck',          vehicle_emoji: '🚚', avg_rating: 4.3, total_deliveries: 67,  completion_rate: 88, is_favorite: false, is_blocked: false },
+];
+
 function DriversTab() {
+  const [section, setSection]   = useState('All Drivers');
+  const [drivers, setDrivers]   = useState([]);
+  const [search, setSearch]     = useState('');
+  const [loading, setLoading]   = useState(true);
+
+  const load = async (searchTerm = '') => {
+    setLoading(true);
+    try {
+      const res  = await fetch(`${API}/get_available_drivers.php`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ search: searchTerm, filters: {} }),
+      });
+      const data = await res.json();
+      if (data.success && data.drivers.length > 0) setDrivers(data.drivers);
+      else setDrivers(DEMO_DRIVERS);
+    } catch { setDrivers(DEMO_DRIVERS); }
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const handleSearch = (e) => {
+    setSearch(e.target.value);
+    load(e.target.value);
+  };
+
+  const handleFavoriteToggle = (id, val) => {
+    setDrivers(prev => prev.map(d => d.id === id ? { ...d, is_favorite: val } : d));
+  };
+  const handleBlockToggle = (id, val) => {
+    setDrivers(prev => prev.map(d => d.id === id ? { ...d, is_blocked: val } : d));
+  };
+
+  const displayed = drivers.filter(d => {
+    if (section === 'Favorites') return d.is_favorite && !d.is_blocked;
+    if (section === 'Blocked')   return d.is_blocked;
+    return !d.is_blocked;
+  });
+
   return (
     <div className="flex flex-1 overflow-hidden">
       <aside className="w-52 shrink-0 border-r border-slate-200 p-4">
         <p className="mb-3 text-[10px] font-semibold uppercase tracking-widest text-slate-400">Drivers</p>
-        <button className="mb-1 flex w-full items-center gap-2 rounded bg-orange-50 px-3 py-2 text-sm font-medium text-[#f36f21]">⭐ Favorites</button>
-        <button className="mb-1 flex w-full items-center gap-2 rounded px-3 py-2 text-sm text-slate-600 hover:bg-slate-50">🚫 Blocked</button>
+        {['All Drivers', 'Favorites', 'Blocked'].map(s => (
+          <button key={s} onClick={() => setSection(s)}
+            className={`mb-1 flex w-full items-center gap-2 rounded px-3 py-2 text-sm transition ${section === s ? 'bg-orange-50 font-medium text-[#f36f21]' : 'text-slate-600 hover:bg-slate-50'}`}>
+            {s === 'All Drivers' ? '🚗' : s === 'Favorites' ? '⭐' : '🚫'} {s}
+          </button>
+        ))}
       </aside>
-      <div className="flex-1 p-8">
-        <h2 className="mb-4 text-xl font-bold text-slate-800">Favorites</h2>
-        <div className="grid grid-cols-3 border-b border-slate-200 pb-2 text-xs font-medium text-slate-400">
-          <span>Name</span><span>Vehicle Type</span><span>Avg. Ratings</span>
+
+      <div className="flex flex-1 flex-col overflow-hidden">
+        <div className="flex items-center justify-between border-b border-slate-200 px-8 py-4">
+          <h2 className="text-xl font-bold text-slate-800">{section}</h2>
+          <div className="relative w-64">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+            <input value={search} onChange={handleSearch} placeholder="Search drivers..."
+              className="h-9 w-full rounded border border-slate-300 pl-9 pr-3 text-sm outline-none focus:border-[#f36f21]" />
+          </div>
         </div>
-        <div className="flex flex-col items-center py-14">
-          <div className="mb-4 text-6xl">⭐</div>
-          <p className="font-semibold text-slate-700">No favorite drivers yet</p>
-          <p className="mt-1 max-w-xs text-center text-sm text-slate-400">Favorite drivers after completing an order.</p>
+
+        <div className="flex-1 overflow-y-auto p-8">
+          {loading ? (
+            <div className="flex justify-center py-20 text-slate-400">Loading drivers...</div>
+          ) : displayed.length === 0 ? (
+            <div className="flex flex-col items-center py-20">
+              <div className="mb-4 text-6xl">{section === 'Favorites' ? '⭐' : section === 'Blocked' ? '🚫' : '🚗'}</div>
+              <p className="font-semibold text-slate-700">
+                {section === 'Favorites' ? 'No favorite drivers yet' : section === 'Blocked' ? 'No blocked drivers' : 'No drivers found'}
+              </p>
+              <p className="mt-1 text-sm text-slate-400">
+                {section === 'Favorites' ? 'Star a driver to add them here.' : section === 'Blocked' ? 'Block a driver to add them here.' : 'Try a different search.'}
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {displayed.map(driver => (
+                <DriverCard
+                  key={driver.id}
+                  driver={driver}
+                  onFavoriteToggle={handleFavoriteToggle}
+                  onBlockToggle={handleBlockToggle}
+                />
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -619,7 +697,7 @@ export default function CustomerDashboard({ user, onLogout }) {
         {activeTab === 'Place Order' && <PlaceOrderTab user={user} />}
         {activeTab === 'Records' && <RecordsTab user={user} />}
         {activeTab === 'Wallet' && <WalletTab user={user} />}
-        {activeTab === 'Drivers' && <DriversTab />}
+        {activeTab === 'Drivers'     && <DriversTab user={user} />}
         {activeTab === 'Rewards' && <RewardsTab orders={orders} />}
       </div>
 
