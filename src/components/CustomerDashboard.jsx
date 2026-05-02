@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMapEvents } from 'react-leaflet';
 import DriverCard from './DriverCard';
 import 'leaflet/dist/leaflet.css';
@@ -112,6 +112,19 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
+// Reverse geocode lat/lng → readable address via Nominatim (free, no key needed)
+async function reverseGeocode(lat, lon) {
+  try {
+    const res  = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`,
+      { headers: { 'Accept-Language': 'en' } }
+    );
+    const data = await res.json();
+    const { road, suburb, city, town, village, county } = data.address || {};
+    return [road, suburb || city || town || village || county].filter(Boolean).join(', ') || data.display_name;
+  } catch { return `${lat.toFixed(4)}, ${lon.toFixed(4)}`; }
+}
+
 const STATUS_COLOR = {
   Pending: 'bg-yellow-100 text-yellow-700',
   Ongoing: 'bg-blue-100 text-blue-700',
@@ -176,6 +189,19 @@ function PlaceOrderTab({ user }) {
       }
     } catch { setMsg('Cannot connect to server.'); }
     setLoading(false);
+  };
+
+  // Handle map click to place pins + reverse geocode
+  const handlePickup = async (coords) => {
+    setPickupCoords(coords);
+    const label = await reverseGeocode(coords[0], coords[1]);
+    setPickup(label);
+  };
+
+  const handleDropoff = async (coords) => {
+    setDropoffCoords(coords);
+    const label = await reverseGeocode(coords[0], coords[1]);
+    setDropoff(label);
   };
 
   const pinStep = !pickupCoords ? 'pickup' : !dropoffCoords ? 'dropoff' : 'done';
@@ -304,8 +330,8 @@ function PlaceOrderTab({ user }) {
           <PinDropHandler
             pickupCoords={pickupCoords}
             dropoffCoords={dropoffCoords}
-            onPickup={setPickupCoords}
-            onDropoff={setDropoffCoords}
+            onPickup={handlePickup}
+            onDropoff={handleDropoff}
           />
           {pickupCoords && <Marker position={pickupCoords} icon={pickupIcon}><Popup>📍 Pickup{pickup ? `: ${pickup}` : ''}</Popup></Marker>}
           {dropoffCoords && <Marker position={dropoffCoords} icon={dropoffIcon}><Popup>🏁 Drop-off{dropoff ? `: ${dropoff}` : ''}</Popup></Marker>}
@@ -324,33 +350,58 @@ function PlaceOrderTab({ user }) {
 
 /* ── Records ── */
 function RecordsTab({ user }) {
-  const [orders, setOrders] = useState([]);
-  const [search, setSearch] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [rating, setRating] = useState({ open: false, order: null, score: 5, comment: '' });
-  const [rateMsg, setRateMsg] = useState('');
+  const [orders, setOrders]       = useState([]);
+  const [search, setSearch]       = useState('');
+  const [loading, setLoading]     = useState(true);
+  const [rating, setRating]       = useState({ open: false, order: null, score: 5, comment: '' });
+  const [rateMsg, setRateMsg]     = useState('');
+  const [toast, setToast]         = useState('');
+  const [trackOrder, setTrackOrder] = useState(null);
+  const prevStatusRef             = useRef({});
 
-  const load = async () => {
-    setLoading(true);
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const res = await fetch(`${API}/get_orders.php`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ role: 'customer', user_id: user.id }),
       });
       const data = await res.json();
-      if (data.success) setOrders(data.orders);
-      else setOrders(DEMO_ORDERS);
+      if (data.success) {
+        data.orders.forEach(o => {
+          const prev = prevStatusRef.current[o.Dlvry_Id];
+          if (prev && prev !== o.Dlvry_Stat) {
+            setToast(`Order #${o.Dlvry_Id} is now ${o.Dlvry_Stat}!`);
+            setTimeout(() => setToast(''), 4000);
+          }
+          prevStatusRef.current[o.Dlvry_Id] = o.Dlvry_Stat;
+        });
+        setOrders(data.orders);
+      } else setOrders(DEMO_ORDERS);
     } catch { setOrders(DEMO_ORDERS); }
-    setLoading(false);
+    if (!silent) setLoading(false);
+  }, [user.id]);
+
+  useEffect(() => { load(); }, [load]);
+
+  // Auto-refresh every 12 seconds
+  useEffect(() => {
+    const id = setInterval(() => load(true), 12000);
+    return () => clearInterval(id);
+  }, [load]);
+
+  const cancelOrder = async (orderId) => {
+    try {
+      const res = await fetch(`${API}/cancel_order.php`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ delivery_id: orderId, cust_id: user.id }),
+      });
+      const data = await res.json();
+      setToast(data.message);
+      setTimeout(() => setToast(''), 3000);
+      if (data.success) load(true);
+    } catch { setToast('Error cancelling order.'); }
   };
-
-  useEffect(() => { load(); }, []);
-
-  const filtered = orders.filter(o =>
-    o.Dlvry_Pick.toLowerCase().includes(search.toLowerCase()) ||
-    o.Dlvry_Drop.toLowerCase().includes(search.toLowerCase()) ||
-    o.Dlvry_Item.toLowerCase().includes(search.toLowerCase())
-  );
 
   const submitRating = async () => {
     setRateMsg('');
@@ -365,17 +416,39 @@ function RecordsTab({ user }) {
     } catch { setRateMsg('Error submitting rating.'); }
   };
 
+  const filtered = orders.filter(o =>
+    o.Dlvry_Pick.toLowerCase().includes(search.toLowerCase()) ||
+    o.Dlvry_Drop.toLowerCase().includes(search.toLowerCase()) ||
+    o.Dlvry_Item.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const ongoingCount = orders.filter(o => o.Dlvry_Stat === 'Ongoing').length;
+
   return (
     <div className="flex-1 overflow-y-auto p-8">
-      <h1 className="mb-5 text-2xl font-bold text-slate-800">Records</h1>
       <div className="mb-5 flex items-center justify-between">
-        <div className="relative w-72">
-          <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" /></svg>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by delivery info"
-            className="h-10 w-full rounded border border-slate-300 pl-9 pr-3 text-sm outline-none focus:border-[#f36f21]" />
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold text-slate-800">Records</h1>
+          {ongoingCount > 0 && (
+            <span className="flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-blue-500"></span>
+              {ongoingCount} active
+            </span>
+          )}
         </div>
-        <button onClick={load} className="rounded border border-slate-300 px-3 py-2 text-xs text-slate-600 hover:bg-slate-50">↻ Refresh</button>
+        <div className="flex items-center gap-2">
+          <div className="relative w-64">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" /></svg>
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search orders..."
+              className="h-9 w-full rounded border border-slate-300 pl-9 pr-3 text-sm outline-none focus:border-[#f36f21]" />
+          </div>
+          <button onClick={() => load()} className="rounded border border-slate-300 px-3 py-2 text-xs text-slate-600 hover:bg-slate-50">↻</button>
+        </div>
       </div>
+
+      {toast && (
+        <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-700">{toast}</div>
+      )}
 
       {loading ? (
         <div className="flex justify-center py-20 text-slate-400">Loading...</div>
@@ -387,21 +460,39 @@ function RecordsTab({ user }) {
       ) : (
         <div className="space-y-3">
           {filtered.map(o => (
-            <div key={o.Dlvry_Id} className="rounded-lg border border-slate-200 p-4 hover:border-slate-300">
+            <div key={o.Dlvry_Id} className={`rounded-lg border p-4 transition ${o.Dlvry_Stat === 'Ongoing' ? 'border-blue-300 bg-blue-50' : 'border-slate-200 hover:border-slate-300'}`}>
               <div className="flex items-start justify-between">
-                <div>
+                <div className="flex-1">
                   <p className="text-xs text-slate-400">Order #{o.Dlvry_Id} · {new Date(o.Dlvry_Time).toLocaleDateString()}</p>
                   <p className="mt-1 font-medium text-slate-800">{o.Dlvry_Item}</p>
                   <p className="text-xs text-slate-500">📍 {o.Dlvry_Pick} → {o.Dlvry_Drop}</p>
-                  {o.driver_name && <p className="mt-1 text-xs text-slate-500">🚗 Driver: {o.driver_name} · {o.driver_phone}</p>}
+                  {o.driver_name && <p className="mt-1 text-xs text-slate-500">🚗 Driver: <span className="font-medium">{o.driver_name}</span> · {o.driver_phone}</p>}
+                  {o.Dlvry_Stat === 'Ongoing' && (
+                    <p className="mt-1 flex items-center gap-1 text-xs font-medium text-blue-600">
+                      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-blue-500"></span>
+                      Driver is on the way
+                    </p>
+                  )}
                 </div>
-                <div className="flex flex-col items-end gap-2">
+                <div className="ml-4 flex flex-col items-end gap-2">
                   <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLOR[o.Dlvry_Stat] || 'bg-slate-100 text-slate-600'}`}>{o.Dlvry_Stat}</span>
                   <span className="text-sm font-bold text-[#f36f21]">₱{parseFloat(o.Dlvry_Fee).toFixed(2)}</span>
+                  {o.Dlvry_Stat === 'Ongoing' && (
+                    <button onClick={() => setTrackOrder(o)}
+                      className="rounded border border-blue-400 px-2 py-1 text-xs text-blue-600 hover:bg-blue-50">
+                      🗺️ Track
+                    </button>
+                  )}
                   {o.Dlvry_Stat === 'Completed' && o.Dlvry_DrvId && (
                     <button onClick={() => setRating({ open: true, order: o, score: 5, comment: '' })}
                       className="rounded border border-[#f36f21] px-2 py-1 text-xs text-[#f36f21] hover:bg-orange-50">
                       ⭐ Rate Driver
+                    </button>
+                  )}
+                  {o.Dlvry_Stat === 'Pending' && (
+                    <button onClick={() => cancelOrder(o.Dlvry_Id)}
+                      className="rounded border border-red-300 px-2 py-1 text-xs text-red-500 hover:bg-red-50">
+                      ✕ Cancel
                     </button>
                   )}
                 </div>
@@ -411,7 +502,8 @@ function RecordsTab({ user }) {
         </div>
       )}
 
-      {/* Rating modal */}
+      {trackOrder && <TrackingModal order={trackOrder} onClose={() => setTrackOrder(null)} />}
+
       {rating.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="w-80 rounded-xl bg-white p-6 shadow-xl">
@@ -435,6 +527,70 @@ function RecordsTab({ user }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ── Tracking Modal ── */
+function TrackingModal({ order, onClose }) {
+  const [driverPos, setDriverPos] = useState(null);
+  const intervalRef = useRef(null);
+
+  const parseCoords = (str) => {
+    if (!str) return null;
+    const parts = str.split(',').map(Number);
+    return (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) ? parts : null;
+  };
+
+  const pickup  = parseCoords(order.Dlvry_Pick)  || [10.3157, 123.8854];
+  const dropoff = parseCoords(order.Dlvry_Drop)  || [10.3300, 123.9000];
+
+  useEffect(() => {
+    let step = 0;
+    const total = 60;
+    setDriverPos(pickup);
+    intervalRef.current = setInterval(() => {
+      step = (step + 1) % total;
+      const t = step / total;
+      setDriverPos([
+        pickup[0] + (dropoff[0] - pickup[0]) * t,
+        pickup[1] + (dropoff[1] - pickup[1]) * t,
+      ]);
+    }, 500);
+    return () => clearInterval(intervalRef.current);
+  }, []);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div className="flex items-center justify-between bg-[#f36f21] px-5 py-4 text-white">
+          <div>
+            <p className="font-bold">Tracking Order #{order.Dlvry_Id}</p>
+            <p className="mt-0.5 flex items-center gap-1 text-xs opacity-80">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white"></span>
+              Driver is on the way
+            </p>
+          </div>
+          <button onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-full bg-white/20 text-lg hover:bg-white/30">✕</button>
+        </div>
+        <div className="flex items-center gap-4 border-b border-slate-100 px-5 py-3 text-xs text-slate-600">
+          <span>📍 {order.Dlvry_Pick}</span>
+          <span className="text-slate-300">→</span>
+          <span>🏁 {order.Dlvry_Drop}</span>
+          {order.driver_name && <span className="ml-auto">🚗 {order.driver_name}</span>}
+        </div>
+        <div className="h-80">
+          <MapContainer center={pickup} zoom={13} className="h-full w-full">
+            <TileLayer attribution='&copy; OpenStreetMap' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+            <Marker position={pickup}  icon={pickupIcon}><Popup>📍 Pickup</Popup></Marker>
+            <Marker position={dropoff} icon={dropoffIcon}><Popup>🏁 Drop-off</Popup></Marker>
+            <Polyline positions={[pickup, dropoff]}
+              pathOptions={{ color: '#f36f21', weight: 3, dashArray: '6 5', opacity: 0.7 }} />
+            {driverPos && <Marker position={driverPos} icon={driverIcon}><Popup>🚗 Your Driver</Popup></Marker>}
+          </MapContainer>
+        </div>
+      </div>
     </div>
   );
 }
