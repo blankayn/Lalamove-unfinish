@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import SettingsPanel from './SettingsPanel';
 
 const API = 'http://localhost/lalamove-api';
 
@@ -9,23 +8,22 @@ const DEMO_DRIVER_ORDERS = [
 ];
 
 const STATUS_COLOR = {
-  Pending:   'bg-yellow-100 text-yellow-700',
-  Ongoing:   'bg-blue-100 text-blue-700',
+  Pending: 'bg-yellow-100 text-yellow-700',
+  Ongoing: 'bg-blue-100 text-blue-700',
   Completed: 'bg-green-100 text-green-700',
   Cancelled: 'bg-red-100 text-red-700',
 };
 
 export default function DriverDashboard({ user, onLogout }) {
-  const [orders, setOrders]         = useState([]);
-  const [loading, setLoading]       = useState(true);
-  const [activeTab, setActiveTab]   = useState('Orders');
-  const [showSettings, setShowSettings] = useState(false);
-  const [msg, setMsg]               = useState('');
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('Orders');
+  const [msg, setMsg] = useState('');
 
   const load = async () => {
     setLoading(true);
     try {
-      const res  = await fetch(`${API}/get_orders.php`, {
+      const res = await fetch(`${API}/get_orders.php`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ role: 'driver', user_id: user.id }),
       });
@@ -41,7 +39,7 @@ export default function DriverDashboard({ user, onLogout }) {
   const updateStatus = async (deliveryId, status) => {
     setMsg('');
     try {
-      const res  = await fetch(`${API}/update_status.php`, {
+      const res = await fetch(`${API}/update_status.php`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ delivery_id: deliveryId, driver_id: user.id, status }),
       });
@@ -51,8 +49,8 @@ export default function DriverDashboard({ user, onLogout }) {
     } catch { setMsg('Error updating status.'); }
   };
 
-  const pending   = orders.filter(o => o.Dlvry_Stat === 'Pending');
-  const ongoing   = orders.filter(o => o.Dlvry_Stat === 'Ongoing' && String(o.Dlvry_DrvId) === String(user.id));
+  const pending = orders.filter(o => o.Dlvry_Stat === 'Pending');
+  const ongoing = orders.filter(o => o.Dlvry_Stat === 'Ongoing' && String(o.Dlvry_DrvId) === String(user.id));
   const completed = orders.filter(o => o.Dlvry_Stat === 'Completed' && String(o.Dlvry_DrvId) === String(user.id));
 
   const TABS = ['Orders', 'My Deliveries', 'History'];
@@ -63,7 +61,7 @@ export default function DriverDashboard({ user, onLogout }) {
       <header className="flex h-14 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-4">
         <div className="flex items-center gap-6">
           <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#f36f21]">
-            <svg width="18" height="18" viewBox="0 0 40 40" fill="none"><path d="M28 12l-6 4-2-4-4 2 3 5-7 9h6l3-4 4 2 5-8-2-6z" fill="white"/></svg>
+            <svg width="18" height="18" viewBox="0 0 40 40" fill="none"><path d="M28 12l-6 4-2-4-4 2 3 5-7 9h6l3-4 4 2 5-8-2-6z" fill="white" /></svg>
           </div>
           <div className="flex items-center gap-1 rounded-full bg-green-100 px-3 py-1">
             <span className="h-2 w-2 rounded-full bg-green-500"></span>
@@ -83,10 +81,6 @@ export default function DriverDashboard({ user, onLogout }) {
         </div>
         <div className="flex items-center gap-2">
           <span className="text-sm text-slate-600">🚗 {user.name}</span>
-          <button onClick={() => setShowSettings(true)}
-            className="flex items-center gap-1 rounded border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50">
-            ⚙️ Settings
-          </button>
           <button onClick={onLogout} className="rounded border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50">
             Log out
           </button>
@@ -219,7 +213,6 @@ export default function DriverDashboard({ user, onLogout }) {
         )}
       </div>
 
-      {showSettings && <SettingsPanel user={user} role="driver" onClose={() => setShowSettings(false)} onLogout={onLogout} />}
     </div>
   );
 }

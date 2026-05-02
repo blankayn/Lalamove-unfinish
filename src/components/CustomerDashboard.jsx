@@ -1,15 +1,73 @@
-import { useState, useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import { useState, useEffect, useRef } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
-import SettingsPanel from './SettingsPanel';
 
+// Fix default leaflet icon
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
   iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
 });
+
+const pickupIcon = new L.Icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+  iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34],
+});
+const dropoffIcon = new L.Icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+  iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34],
+});
+const driverIcon = new L.Icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-orange.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+  iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34],
+});
+
+const DEFAULT_CENTER = [10.3157, 123.8854]; // Cebu City
+
+/* Listens for map clicks and calls onPickup / onDropoff */
+function PinDropHandler({ pickupCoords, dropoffCoords, onPickup, onDropoff }) {
+  useMapEvents({
+    click(e) {
+      const { lat, lng } = e.latlng;
+      if (!pickupCoords) {
+        onPickup([lat, lng]);
+      } else if (!dropoffCoords) {
+        onDropoff([lat, lng]);
+      } else {
+        // Both placed — reset and start over
+        onPickup([lat, lng]);
+        onDropoff(null);
+      }
+    },
+  });
+  return null;
+}
+
+/* Animate driver marker along a path */
+function AnimatedDriver({ from, to }) {
+  const [pos, setPos] = useState(from);
+  const stepRef = useRef(0);
+  useEffect(() => {
+    stepRef.current = 0;
+    const total = 80;
+    const interval = setInterval(() => {
+      stepRef.current += 1;
+      if (stepRef.current >= total) { clearInterval(interval); return; }
+      const t = stepRef.current / total;
+      setPos([
+        from[0] + (to[0] - from[0]) * t,
+        from[1] + (to[1] - from[1]) * t,
+      ]);
+    }, 200);
+    return () => clearInterval(interval);
+  }, []);
+  return <Marker position={pos} icon={driverIcon}><Popup>Driver is on the way!</Popup></Marker>;
+}
 
 const API = 'http://localhost/lalamove-api';
 
@@ -32,67 +90,149 @@ const VEHICLES = [
   { label: '1000 kg Truck', emoji: '🚚', fee: 300 },
 ];
 
+const ITEM_TYPES = [
+  { label: 'Small', emoji: '📦', desc: 'Small packages' },
+  { label: 'Medium', emoji: '📦', desc: 'Medium boxes' },
+  { label: 'Large', emoji: '📦', desc: 'Large items' },
+  { label: 'Fragile', emoji: '⚠️', desc: 'Handle with care' },
+  { label: 'Food', emoji: '🍔', desc: 'Food delivery' },
+  { label: 'Documents', emoji: '📄', desc: 'Papers & files' },
+];
+
+// Haversine formula to calculate distance between two points (in km)
+function calculateDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371; // Earth's radius in km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
 const STATUS_COLOR = {
-  Pending:   'bg-yellow-100 text-yellow-700',
-  Ongoing:   'bg-blue-100 text-blue-700',
+  Pending: 'bg-yellow-100 text-yellow-700',
+  Ongoing: 'bg-blue-100 text-blue-700',
   Completed: 'bg-green-100 text-green-700',
   Cancelled: 'bg-red-100 text-red-700',
 };
 
 /* ── Place Order ── */
 function PlaceOrderTab({ user }) {
-  const [pickup, setPickup]   = useState('');
+  const [pickup, setPickup] = useState('');
   const [dropoff, setDropoff] = useState('');
-  const [item, setItem]       = useState('');
-  const [dist, setDist]       = useState('');
-  const [selVeh, setSelVeh]   = useState(0);
+  const [pickupCoords, setPickupCoords] = useState(null);  // [lat, lng]
+  const [dropoffCoords, setDropoffCoords] = useState(null);
+  const [itemType, setItemType] = useState('Small');
+  const [itemDesc, setItemDesc] = useState('');
+  const [selVeh, setSelVeh] = useState(0);
   const [vehStart, setVehStart] = useState(0);
   const [payment, setPayment] = useState('Cash');
-  const [msg, setMsg]         = useState('');
+  const [msg, setMsg] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showDriver, setShowDriver] = useState(false);
 
-  const fee = dist ? (parseFloat(dist) * VEHICLES[selVeh].fee).toFixed(2) : '0.00';
+  // Auto-calculate distance using Haversine
+  const dist = (pickupCoords && dropoffCoords)
+    ? calculateDistance(pickupCoords[0], pickupCoords[1], dropoffCoords[0], dropoffCoords[1])
+    : 0;
+  const fee = dist ? (dist * VEHICLES[selVeh].fee).toFixed(2) : '0.00';
   const visible = VEHICLES.slice(vehStart, vehStart + 4);
 
   const handleOrder = async (e) => {
     e.preventDefault();
+    if (!pickupCoords || !dropoffCoords) {
+      setMsg('Please click on the map to place pickup and drop-off pins.');
+      return;
+    }
     setMsg(''); setLoading(true);
+    const pickupLabel = pickup.trim() || `${pickupCoords[0].toFixed(4)}, ${pickupCoords[1].toFixed(4)}`;
+    const dropoffLabel = dropoff.trim() || `${dropoffCoords[0].toFixed(4)}, ${dropoffCoords[1].toFixed(4)}`;
+    const itemLabel = itemDesc.trim() ? `${itemType} - ${itemDesc}` : itemType;
     try {
-      const res  = await fetch(`${API}/place_order.php`, {
+      const res = await fetch(`${API}/place_order.php`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cust_id: user.id, pickup, dropoff, item, dist: parseFloat(dist) || 0, fee: parseFloat(fee), payment_method: payment }),
+        body: JSON.stringify({
+          cust_id: user.id,
+          pickup: pickupLabel,
+          dropoff: dropoffLabel,
+          item: itemLabel,
+          dist: parseFloat(dist.toFixed(2)),
+          fee: parseFloat(fee),
+          payment_method: payment,
+        }),
       });
       const data = await res.json();
       setMsg(data.message);
-      if (data.success) { setPickup(''); setDropoff(''); setItem(''); setDist(''); }
+      if (data.success) {
+        setShowDriver(true);
+        setTimeout(() => {
+          setPickup(''); setDropoff('');
+          setPickupCoords(null); setDropoffCoords(null);
+          setItemDesc(''); setShowDriver(false);
+        }, 10000);
+      }
     } catch { setMsg('Cannot connect to server.'); }
     setLoading(false);
   };
+
+  const pinStep = !pickupCoords ? 'pickup' : !dropoffCoords ? 'dropoff' : 'done';
 
   return (
     <div className="flex flex-1 overflow-hidden">
       <aside className="flex w-[440px] shrink-0 flex-col overflow-y-auto border-r border-slate-200 bg-white p-5">
         <p className="mb-3 text-[10px] font-semibold uppercase tracking-widest text-slate-400">Route</p>
         <form onSubmit={handleOrder} className="flex flex-col gap-3">
+
+          {/* Pickup input */}
           <div className="flex items-center gap-2">
-            <span className="text-slate-300">○</span>
-            <input value={pickup} onChange={e => setPickup(e.target.value)} placeholder="Pick-up location" required
+            <span className={`h-3 w-3 rounded-full shrink-0 ${pickupCoords ? 'bg-green-500' : 'bg-slate-300'}`}></span>
+            <input value={pickup} onChange={e => setPickup(e.target.value)}
+              placeholder={pickupCoords ? `Pin: ${pickupCoords[0].toFixed(4)}, ${pickupCoords[1].toFixed(4)}` : 'Pick-up location (or click map)'}
               className="flex-1 border-b border-slate-200 py-1.5 text-sm outline-none placeholder:text-slate-400 focus:border-[#f36f21]" />
+            {pickupCoords && (
+              <button type="button" onClick={() => { setPickupCoords(null); setDropoffCoords(null); setShowDriver(false); }}
+                className="text-slate-300 hover:text-red-400 text-xs">✕</button>
+            )}
           </div>
+
+          {/* Dropoff input */}
           <div className="flex items-center gap-2">
-            <span className="text-[#f36f21]">📍</span>
-            <input value={dropoff} onChange={e => setDropoff(e.target.value)} placeholder="Drop-off location" required
+            <span className={`h-3 w-3 rounded-full shrink-0 ${dropoffCoords ? 'bg-red-500' : 'bg-slate-300'}`}></span>
+            <input value={dropoff} onChange={e => setDropoff(e.target.value)}
+              placeholder={dropoffCoords ? `Pin: ${dropoffCoords[0].toFixed(4)}, ${dropoffCoords[1].toFixed(4)}` : 'Drop-off location (or click map)'}
               className="flex-1 border-b border-slate-200 py-1.5 text-sm outline-none placeholder:text-slate-400 focus:border-[#f36f21]" />
+            {dropoffCoords && (
+              <button type="button" onClick={() => { setDropoffCoords(null); setShowDriver(false); }}
+                className="text-slate-300 hover:text-red-400 text-xs">✕</button>
+            )}
           </div>
-          <input value={item} onChange={e => setItem(e.target.value)} placeholder="Item description" required
-            className="border-b border-slate-200 py-1.5 text-sm outline-none placeholder:text-slate-400 focus:border-[#f36f21]" />
-          <input type="number" value={dist} onChange={e => setDist(e.target.value)} placeholder="Distance (km)" min="0" step="0.1"
+
+          {/* Map hint */}
+          <div className={`rounded-lg border px-3 py-2 text-xs ${pinStep === 'done' ? 'border-green-200 bg-green-50 text-green-700' : 'border-slate-200 bg-slate-50 text-slate-500'}`}>
+            {pinStep === 'pickup' && '📍 Click on the map to place your pickup pin'}
+            {pinStep === 'dropoff' && '🏁 Now click on the map to place your drop-off pin'}
+            {pinStep === 'done' && `✓ Distance: ${dist.toFixed(2)} km — Click map again to reset pins`}
+          </div>
+
+          <hr className="border-slate-100" />
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">Item Type</p>
+          <div className="grid grid-cols-3 gap-2">
+            {ITEM_TYPES.map(type => (
+              <button type="button" key={type.label} onClick={() => setItemType(type.label)}
+                className={`flex flex-col items-center rounded-lg border p-2 transition ${itemType === type.label ? 'border-[#f36f21] bg-orange-50' : 'border-slate-200 hover:border-slate-300'}`}>
+                <span className="text-xl">{type.emoji}</span>
+                <span className="mt-1 text-[10px] font-medium text-slate-700">{type.label}</span>
+              </button>
+            ))}
+          </div>
+
+          <input value={itemDesc} onChange={e => setItemDesc(e.target.value)} placeholder="Item description (optional)"
             className="border-b border-slate-200 py-1.5 text-sm outline-none placeholder:text-slate-400 focus:border-[#f36f21]" />
 
           <hr className="border-slate-100" />
-          <div className="flex items-center justify-between">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">Vehicle Type</p>
-          </div>
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">Vehicle Type</p>
           <div className="relative">
             {vehStart > 0 && (
               <button type="button" onClick={() => setVehStart(vehStart - 1)}
@@ -136,19 +276,45 @@ function PlaceOrderTab({ user }) {
 
           {msg && <p className={`text-xs ${msg.toLowerCase().includes('success') ? 'text-green-600' : 'text-red-500'}`}>{msg}</p>}
 
-          <button type="submit" disabled={loading}
+          <button type="submit" disabled={loading || !pickupCoords || !dropoffCoords}
             className="h-11 w-full rounded-lg bg-[#f36f21] text-sm font-bold uppercase tracking-wide text-white hover:brightness-105 disabled:opacity-60">
             {loading ? 'Placing...' : 'Place Order'}
           </button>
         </form>
       </aside>
+
+      {/* Map */}
       <div className="relative flex-1">
-        <div className="absolute right-4 top-4 z-[999] rounded border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow">
-          Manila NCR and South Luzon
+        <div className="absolute right-4 top-4 z-[999] flex items-center gap-2 rounded border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow">
+          {showDriver
+            ? <span className="inline-flex items-center gap-1 text-green-600"><span className="h-2 w-2 animate-pulse rounded-full bg-green-500"></span>Driver En Route</span>
+            : <span>{pinStep === 'pickup' ? '📍 Click map: Pickup' : pinStep === 'dropoff' ? '🏁 Click map: Drop-off' : '✓ Both pins set'}</span>
+          }
         </div>
-        <MapContainer center={[14.5995, 120.9842]} zoom={10} className="h-full w-full">
+        {(pickupCoords || dropoffCoords) && (
+          <div className="absolute left-4 bottom-8 z-[999] rounded border border-slate-200 bg-white p-2 shadow text-xs space-y-1">
+            {pickupCoords && <div className="flex items-center gap-1.5"><span className="inline-block h-3 w-3 rounded-full bg-green-500"></span>Pickup</div>}
+            {dropoffCoords && <div className="flex items-center gap-1.5"><span className="inline-block h-3 w-3 rounded-full bg-red-500"></span>Drop-off</div>}
+            {showDriver && <div className="flex items-center gap-1.5"><span>🚗</span>Your Driver</div>}
+          </div>
+        )}
+        <MapContainer center={DEFAULT_CENTER} zoom={13} className="h-full w-full">
           <TileLayer attribution='&copy; OpenStreetMap' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-          <Marker position={[14.5995, 120.9842]}><Popup>Manila</Popup></Marker>
+          <PinDropHandler
+            pickupCoords={pickupCoords}
+            dropoffCoords={dropoffCoords}
+            onPickup={setPickupCoords}
+            onDropoff={setDropoffCoords}
+          />
+          {pickupCoords && <Marker position={pickupCoords} icon={pickupIcon}><Popup>📍 Pickup{pickup ? `: ${pickup}` : ''}</Popup></Marker>}
+          {dropoffCoords && <Marker position={dropoffCoords} icon={dropoffIcon}><Popup>🏁 Drop-off{dropoff ? `: ${dropoff}` : ''}</Popup></Marker>}
+          {pickupCoords && dropoffCoords && (
+            <Polyline positions={[pickupCoords, dropoffCoords]}
+              pathOptions={{ color: '#f36f21', weight: 4, dashArray: '8 6', opacity: 0.85 }} />
+          )}
+          {showDriver && pickupCoords && dropoffCoords && (
+            <AnimatedDriver from={pickupCoords} to={dropoffCoords} />
+          )}
         </MapContainer>
       </div>
     </div>
@@ -157,16 +323,16 @@ function PlaceOrderTab({ user }) {
 
 /* ── Records ── */
 function RecordsTab({ user }) {
-  const [orders, setOrders]   = useState([]);
-  const [search, setSearch]   = useState('');
+  const [orders, setOrders] = useState([]);
+  const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
-  const [rating, setRating]   = useState({ open: false, order: null, score: 5, comment: '' });
+  const [rating, setRating] = useState({ open: false, order: null, score: 5, comment: '' });
   const [rateMsg, setRateMsg] = useState('');
 
   const load = async () => {
     setLoading(true);
     try {
-      const res  = await fetch(`${API}/get_orders.php`, {
+      const res = await fetch(`${API}/get_orders.php`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ role: 'customer', user_id: user.id }),
       });
@@ -188,7 +354,7 @@ function RecordsTab({ user }) {
   const submitRating = async () => {
     setRateMsg('');
     try {
-      const res  = await fetch(`${API}/rate_driver.php`, {
+      const res = await fetch(`${API}/rate_driver.php`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ delivery_id: rating.order.Dlvry_Id, cust_id: user.id, driver_id: rating.order.Dlvry_DrvId, score: rating.score, comment: rating.comment }),
       });
@@ -203,7 +369,7 @@ function RecordsTab({ user }) {
       <h1 className="mb-5 text-2xl font-bold text-slate-800">Records</h1>
       <div className="mb-5 flex items-center justify-between">
         <div className="relative w-72">
-          <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" /></svg>
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by delivery info"
             className="h-10 w-full rounded border border-slate-300 pl-9 pr-3 text-sm outline-none focus:border-[#f36f21]" />
         </div>
@@ -250,7 +416,7 @@ function RecordsTab({ user }) {
           <div className="w-80 rounded-xl bg-white p-6 shadow-xl">
             <h3 className="mb-4 text-lg font-bold text-slate-800">Rate your driver</h3>
             <div className="mb-3 flex justify-center gap-2">
-              {[1,2,3,4,5].map(s => (
+              {[1, 2, 3, 4, 5].map(s => (
                 <button key={s} onClick={() => setRating(r => ({ ...r, score: s }))}
                   className={`text-2xl transition ${s <= rating.score ? 'text-yellow-400' : 'text-slate-300'}`}>★</button>
               ))}
@@ -274,15 +440,15 @@ function RecordsTab({ user }) {
 
 /* ── Wallet ── */
 function WalletTab({ user }) {
-  const [section, setSection]   = useState('Transaction History');
+  const [section, setSection] = useState('Transaction History');
   const [payments, setPayments] = useState([]);
-  const [total, setTotal]       = useState(0);
-  const [loading, setLoading]   = useState(true);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     (async () => {
       try {
-        const res  = await fetch(`${API}/get_payments.php`, {
+        const res = await fetch(`${API}/get_payments.php`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ cust_id: user.id }),
         });
@@ -385,7 +551,7 @@ function DriversTab() {
 /* ── Rewards ── */
 function RewardsTab({ orders }) {
   const completed = orders?.filter(o => o.Dlvry_Stat === 'Completed').length || 0;
-  const points    = completed * 100;
+  const points = completed * 100;
   return (
     <div className="flex-1 overflow-y-auto p-8">
       <h1 className="mb-2 text-2xl font-bold text-slate-800">Rewards</h1>
@@ -400,8 +566,8 @@ function RewardsTab({ orders }) {
       </div>
       <div className="grid grid-cols-3 gap-4">
         {[{ tier: 'Silver', pts: '0–999', color: '#94a3b8', emoji: '🥈' },
-          { tier: 'Gold', pts: '1,000–4,999', color: '#f59e0b', emoji: '🥇' },
-          { tier: 'Platinum', pts: '5,000+', color: '#6366f1', emoji: '💎' }].map(t => (
+        { tier: 'Gold', pts: '1,000–4,999', color: '#f59e0b', emoji: '🥇' },
+        { tier: 'Platinum', pts: '5,000+', color: '#6366f1', emoji: '💎' }].map(t => (
           <div key={t.tier} className={`rounded-lg border p-4 text-center ${points >= (t.tier === 'Gold' ? 1000 : t.tier === 'Platinum' ? 5000 : 0) ? 'border-[#f36f21]' : 'border-slate-200'}`}>
             <div className="mb-2 text-3xl">{t.emoji}</div>
             <p className="font-bold" style={{ color: t.color }}>{t.tier}</p>
@@ -415,15 +581,14 @@ function RewardsTab({ orders }) {
 
 /* ── Main Customer Dashboard ── */
 export default function CustomerDashboard({ user, onLogout }) {
-  const [activeTab, setActiveTab]   = useState('Place Order');
-  const [showSettings, setShowSettings] = useState(false);
-  const [orders, setOrders]         = useState([]);
+  const [activeTab, setActiveTab] = useState('Place Order');
+  const [orders, setOrders] = useState([]);
 
   useEffect(() => {
     fetch(`${API}/get_orders.php`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ role: 'customer', user_id: user.id }),
-    }).then(r => r.json()).then(d => { if (d.success) setOrders(d.orders); }).catch(() => {});
+    }).then(r => r.json()).then(d => { if (d.success) setOrders(d.orders); }).catch(() => { });
   }, [activeTab]);
 
   return (
@@ -431,7 +596,7 @@ export default function CustomerDashboard({ user, onLogout }) {
       <header className="flex h-14 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-4">
         <div className="flex items-center gap-6">
           <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#f36f21]">
-            <svg width="18" height="18" viewBox="0 0 40 40" fill="none"><path d="M28 12l-6 4-2-4-4 2 3 5-7 9h6l3-4 4 2 5-8-2-6z" fill="white"/></svg>
+            <svg width="18" height="18" viewBox="0 0 40 40" fill="none"><path d="M28 12l-6 4-2-4-4 2 3 5-7 9h6l3-4 4 2 5-8-2-6z" fill="white" /></svg>
           </div>
           <nav className="flex items-center">
             {TABS.map(tab => (
@@ -444,10 +609,6 @@ export default function CustomerDashboard({ user, onLogout }) {
         </div>
         <div className="flex items-center gap-2">
           <span className="text-sm text-slate-600">👤 {user.name}</span>
-          <button onClick={() => setShowSettings(true)}
-            className="flex items-center gap-1 rounded border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50">
-            ⚙️ Settings
-          </button>
           <button onClick={onLogout} className="rounded border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50">
             Log out
           </button>
@@ -456,13 +617,12 @@ export default function CustomerDashboard({ user, onLogout }) {
 
       <div className="flex flex-1 overflow-hidden">
         {activeTab === 'Place Order' && <PlaceOrderTab user={user} />}
-        {activeTab === 'Records'     && <RecordsTab user={user} />}
-        {activeTab === 'Wallet'      && <WalletTab user={user} />}
-        {activeTab === 'Drivers'     && <DriversTab />}
-        {activeTab === 'Rewards'     && <RewardsTab orders={orders} />}
+        {activeTab === 'Records' && <RecordsTab user={user} />}
+        {activeTab === 'Wallet' && <WalletTab user={user} />}
+        {activeTab === 'Drivers' && <DriversTab />}
+        {activeTab === 'Rewards' && <RewardsTab orders={orders} />}
       </div>
 
-      {showSettings && <SettingsPanel user={user} role="customer" onClose={() => setShowSettings(false)} onLogout={onLogout} />}
     </div>
   );
 }

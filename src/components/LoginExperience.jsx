@@ -34,6 +34,14 @@ export default function LoginExperience() {
   const [regLic, setRegLic]         = useState('');
   const [regMsg, setRegMsg]         = useState('');
 
+                {/* Forgot password state */}
+                const [isForgotPass, setIsForgotPass] = useState(false);
+                const [forgotEmail, setForgotEmail]   = useState('');
+                const [newPass, setNewPass]         = useState('');
+                const [confirmPass, setConfirmPass] = useState('');
+                const [forgotMsg, setForgotMsg]       = useState('');
+                const [forgotLoading, setForgotLoading] = useState(false);
+
   const handleLogout = () => { setLoggedIn(false); setUser(null); setEmail(''); setPassword(''); };
 
   if (loggedIn && role === 'customer') return <CustomerDashboard user={user} onLogout={handleLogout} />;
@@ -81,6 +89,28 @@ export default function LoginExperience() {
     }
   };
 
+                const handleForgotPassword = async (e) => {
+                  e.preventDefault();
+                  setForgotMsg(''); setForgotLoading(true);
+                  if (newPass !== confirmPass) {
+                    setForgotMsg('Passwords do not match.');
+                    setForgotLoading(false);
+                    return;
+                  }
+                  try {
+                    const res = await fetch(`http://localhost/lalamove-api/forgot_password.php`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ role, email: forgotEmail, newPassword: newPass }),
+                    });
+                    const data = await res.json();
+                    setForgotMsg(data.message);
+                  } catch {
+                    setForgotMsg('Password reset failed.');
+                  }
+                  setForgotLoading(false);
+                };
+
   return (
     <div className="relative h-screen w-screen overflow-hidden font-['Rubik']" style={{ background: '#edecea' }}>
       <img src={vehiclesBg} alt="" className="pointer-events-none absolute bottom-0 left-0 h-[90%] w-auto select-none object-contain" />
@@ -114,7 +144,7 @@ export default function LoginExperience() {
           </div>
 
           <AnimatePresence mode="wait">
-            {!isRegister ? (
+            {!isRegister && !isForgotPass ? (
               <motion.form key="login" initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 10 }}
                 transition={{ duration: 0.2 }} onSubmit={handleLogin} className="space-y-3">
                 <input type="text" placeholder="Email address" value={email} onChange={e => setEmail(e.target.value)} required
@@ -130,7 +160,7 @@ export default function LoginExperience() {
                   </button>
                 </div>
                 {error && <p className="text-xs text-red-500">{error}</p>}
-                <div className="text-right"><span className="cursor-pointer text-xs text-[#f36f21] hover:underline">Forgot password?</span></div>
+                <div className="text-right"><span onClick={() => { setIsForgotPass(true); setError(''); }} className="cursor-pointer text-xs text-[#f36f21] hover:underline">Forgot password?</span></div>
                 <button type="submit" disabled={loading}
                   className="h-11 w-full rounded bg-[#f36f21] text-sm font-bold text-white hover:brightness-105 disabled:opacity-60">
                   {loading ? 'Logging in...' : 'Log In'}
@@ -149,7 +179,34 @@ export default function LoginExperience() {
                   <span onClick={() => { setIsRegister(true); setError(''); }} className="cursor-pointer font-semibold text-[#f36f21] hover:underline">Create a free account</span>
                 </p>
               </motion.form>
-            ) : (
+                ) : isForgotPass ? (
+                  <motion.form key="forgot" initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }}
+                    transition={{ duration: 0.2 }} onSubmit={handleForgotPassword} className="space-y-3">
+                    <div className="mb-2">
+                      <h3 className="text-base font-bold text-slate-800">Reset Password</h3>
+                      <p className="mt-1 text-xs text-slate-500">Enter your email and new password.</p>
+                    </div>
+                    <input type="email" placeholder="Email address" value={forgotEmail} onChange={e => setForgotEmail(e.target.value)} required
+                      className="h-11 w-full rounded border border-slate-300 px-3 text-sm outline-none placeholder:text-slate-400 focus:border-[#f36f21]" />
+                    <input type="password" placeholder="New password" value={newPass} onChange={e => setNewPass(e.target.value)} required
+                      className="h-11 w-full rounded border border-slate-300 px-3 text-sm outline-none placeholder:text-slate-400 focus:border-[#f36f21]" />
+                    <input type="password" placeholder="Confirm password" value={confirmPass} onChange={e => setConfirmPass(e.target.value)} required
+                      className="h-11 w-full rounded border border-slate-300 px-3 text-sm outline-none placeholder:text-slate-400 focus:border-[#f36f21]" />
+                    {forgotMsg && (
+                      <div className={`rounded-lg px-3 py-2 text-xs ${forgotMsg.toLowerCase().includes('success') ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-500'}`}>
+                        {forgotMsg}
+                      </div>
+                    )}
+                    <button type="submit" disabled={forgotLoading}
+                      className="h-11 w-full rounded bg-[#f36f21] text-sm font-bold text-white hover:brightness-105 disabled:opacity-60">
+                      {forgotLoading ? 'Resetting...' : 'Reset Password'}
+                    </button>
+                    <p className="text-center text-xs text-slate-500">
+                      Remembered your password?{' '}
+                      <span onClick={() => { setIsForgotPass(false); setForgotMsg(''); setForgotEmail(''); setNewPass(''); setConfirmPass(''); }} className="cursor-pointer font-semibold text-[#f36f21] hover:underline">Back to Login</span>
+                    </p>
+                  </motion.form>
+                ) : (
               <motion.form key="register" initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }}
                 transition={{ duration: 0.2 }} onSubmit={handleRegister} className="space-y-2.5">
                 <input type="text" placeholder="Full name" value={regName} onChange={e => setRegName(e.target.value)} required
