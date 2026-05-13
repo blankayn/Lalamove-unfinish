@@ -24,9 +24,14 @@ if ($role === 'driver') {
 } else {
     // Customer sees their own orders
     $stmt = $pdo->prepare('
-        SELECT d.*, drv.Drv_Fname as driver_name, drv.Drv_Cnum as driver_phone
+        SELECT d.*,
+               drv.Drv_Fname as driver_name,
+               drv.Drv_Cnum as driver_phone,
+               drv.Drv_Stat as driver_status,
+               COALESCE(v.Veh_Type, "Vehicle not set") as driver_vehicle_type
         FROM DELIVERY d
         LEFT JOIN DRIVER drv ON d.Dlvry_DrvId = drv.Drv_Id
+        LEFT JOIN VEHICLE v ON v.Veh_DrvId = drv.Drv_Id
         WHERE d.Dlvry_CustId = ?
         ORDER BY d.Dlvry_Time DESC
     ');

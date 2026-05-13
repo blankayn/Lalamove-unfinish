@@ -1,6 +1,7 @@
 <?php
 require 'cors.php';
 require 'db.php';
+require 'vehicle_utils.php';
 
 $data  = json_decode(file_get_contents('php://input'), true);
 $drvId = intval($data['driver_id'] ?? 0);
@@ -11,7 +12,14 @@ if (!$drvId) {
 }
 
 // Get driver info
-$stmt = $pdo->prepare('SELECT * FROM DRIVER WHERE Drv_Id = ?');
+$stmt = $pdo->prepare('
+    SELECT d.*, v.Veh_Type
+    FROM DRIVER d
+    LEFT JOIN VEHICLE v ON v.Veh_DrvId = d.Drv_Id
+    WHERE d.Drv_Id = ?
+    ORDER BY v.Veh_Id DESC
+    LIMIT 1
+');
 $stmt->execute([$drvId]);
 $driver = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -22,7 +30,7 @@ if (!$driver) {
 
 // Get ratings/comments for this driver
 $rStmt = $pdo->prepare('
-    SELECT r.Rting_Score, r.Rting_Comment, r.Rting_Date,
+    SELECT r.Rting_DlvryId, r.Rting_Score, r.Rting_Comment, r.Rting_Date,
            c.Cust_Fname AS customer_name
     FROM RATING r
     LEFT JOIN CUSTOMER c ON r.Rting_CustId = c.Cust_Id
@@ -49,12 +57,15 @@ echo json_encode([
         'id'               => $driver['Drv_Id'],
         'name'             => $driver['Drv_Fname'],
         'email'            => $driver['Drv_Email'],
-        'phone'            => $driver['Drv_Phone'] ?? 'N/A',
+        'phone'            => $driver['Drv_Cnum'] ?? 'N/A',
         'status'           => $driver['Drv_Stat'] ?? 'Available',
+        'vehicle_type'     => trim($driver['Veh_Type'] ?? '') ?: 'Vehicle not set',
+        'vehicle_emoji'    => vehicleEmojiForType(trim($driver['Veh_Type'] ?? '')),
         'avg_rating'       => $avg,
         'total_deliveries' => (int)$totalDeliveries,
     ],
     'reviews' => array_map(fn($r) => [
+        'delivery_id' => (int)$r['Rting_DlvryId'],
         'customer'  => $r['customer_name'] ?? 'Anonymous',
         'score'     => (int)$r['Rting_Score'],
         'comment'   => $r['Rting_Comment'],

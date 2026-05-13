@@ -10,10 +10,10 @@
   }
 
   body {
-    @apply m-0 bg-white font-rubik overflow-hidden;
+    @apply m-0 bg-white font-rubik;
   }
 
   html {
-    @apply overflow-hidden;
+    @apply scroll-smooth;
   }
 }

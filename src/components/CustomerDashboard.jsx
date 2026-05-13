@@ -284,6 +284,32 @@ function PlaceOrderTab({ user }) {
             )}
           </div>
 
+          {/* Vehicle vs item size warning */}
+          {(() => {
+            const smallItems = ['Small', 'Documents', 'Food'];
+            const mediumItems = ['Medium', 'Fragile'];
+            const bigVehicles = ['300 kg Small Crossover SUV', '600 kg 7-seater SUV/Minivan', '1000 kg Truck'];
+            const medVehicles = ['600 kg 7-seater SUV/Minivan', '1000 kg Truck'];
+            const selectedVehicle = VEHICLES[selVeh].label;
+            if (smallItems.includes(itemType) && bigVehicles.includes(selectedVehicle)) {
+              return (
+                <div className="flex items-start gap-2 rounded-lg border border-yellow-200 bg-yellow-50 px-3 py-2 text-xs text-yellow-700">
+                  <span className="mt-0.5 shrink-0">⚠️</span>
+                  <span>A <strong>Motorcycle</strong> or <strong>Sedan</strong> is recommended for <strong>{itemType}</strong> items. You can still proceed — you'll just pay more.</span>
+                </div>
+              );
+            }
+            if (mediumItems.includes(itemType) && medVehicles.includes(selectedVehicle)) {
+              return (
+                <div className="flex items-start gap-2 rounded-lg border border-yellow-200 bg-yellow-50 px-3 py-2 text-xs text-yellow-700">
+                  <span className="mt-0.5 shrink-0">⚠️</span>
+                  <span>A <strong>Sedan</strong> or <strong>SUV</strong> is usually enough for <strong>{itemType}</strong> items.</span>
+                </div>
+              );
+            }
+            return null;
+          })()}
+
           <div className="flex items-center justify-between rounded-lg bg-orange-50 px-4 py-2">
             <span className="text-sm text-slate-600">Estimated Fee</span>
             <span className="text-lg font-bold text-[#f36f21]">₱{fee}</span>
@@ -355,8 +381,14 @@ function RecordsTab({ user }) {
   const [loading, setLoading]     = useState(true);
   const [rating, setRating]       = useState({ open: false, order: null, score: 5, comment: '' });
   const [rateMsg, setRateMsg]     = useState('');
-  const [toast, setToast]         = useState('');
+  const [toast, setToast] = useState({ msg: '', type: 'info' });
+
+  const showToast = (msg, type = 'info') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast({ msg: '', type: 'info' }), 3500);
+  };
   const [trackOrder, setTrackOrder] = useState(null);
+  const [ratedOrders, setRatedOrders] = useState(new Set()); // tracks which orders have been rated this session
   const prevStatusRef             = useRef({});
 
   const load = useCallback(async (silent = false) => {
@@ -371,8 +403,7 @@ function RecordsTab({ user }) {
         data.orders.forEach(o => {
           const prev = prevStatusRef.current[o.Dlvry_Id];
           if (prev && prev !== o.Dlvry_Stat) {
-            setToast(`Order #${o.Dlvry_Id} is now ${o.Dlvry_Stat}!`);
-            setTimeout(() => setToast(''), 4000);
+            showToast(`Order #${o.Dlvry_Id} is now ${o.Dlvry_Stat}!`, 'info');
           }
           prevStatusRef.current[o.Dlvry_Id] = o.Dlvry_Stat;
         });
@@ -397,10 +428,9 @@ function RecordsTab({ user }) {
         body: JSON.stringify({ delivery_id: orderId, cust_id: user.id }),
       });
       const data = await res.json();
-      setToast(data.message);
-      setTimeout(() => setToast(''), 3000);
+      showToast(data.message, data.success ? 'info' : 'error');
       if (data.success) load(true);
-    } catch { setToast('Error cancelling order.'); }
+    } catch { showToast('Error cancelling order.', 'error'); }
   };
 
   const submitRating = async () => {
@@ -412,8 +442,25 @@ function RecordsTab({ user }) {
       });
       const data = await res.json();
       setRateMsg(data.message);
-      if (data.success) setTimeout(() => setRating({ open: false, order: null, score: 5, comment: '' }), 1200);
+      if (data.success) {
+        setRatedOrders(prev => new Set([...prev, rating.order.Dlvry_Id]));
+        setTimeout(() => setRating({ open: false, order: null, score: 5, comment: '' }), 1200);
+      }
     } catch { setRateMsg('Error submitting rating.'); }
+  };
+
+  const deleteRating = async (orderId) => {
+    try {
+      const res = await fetch(`${API}/delete_rating.php`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ delivery_id: orderId, cust_id: user.id }),
+      });
+      const data = await res.json();
+      showToast(data.message, data.success ? 'success' : 'error');
+      if (data.success) {
+        setRatedOrders(prev => { const next = new Set(prev); next.delete(orderId); return next; });
+      }
+    } catch { showToast('Error deleting rating.', 'error'); }
   };
 
   const filtered = orders.filter(o =>
@@ -446,8 +493,12 @@ function RecordsTab({ user }) {
         </div>
       </div>
 
-      {toast && (
-        <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-700">{toast}</div>
+      {toast.msg && (
+        <div className={`mb-4 rounded-lg border px-4 py-2 text-sm ${
+          toast.type === 'error'   ? 'border-red-200 bg-red-50 text-red-700' :
+          toast.type === 'success' ? 'border-green-200 bg-green-50 text-green-700' :
+                                     'border-blue-200 bg-blue-50 text-blue-700'
+        }`}>{toast.msg}</div>
       )}
 
       {loading ? (
@@ -484,10 +535,17 @@ function RecordsTab({ user }) {
                     </button>
                   )}
                   {o.Dlvry_Stat === 'Completed' && o.Dlvry_DrvId && (
-                    <button onClick={() => setRating({ open: true, order: o, score: 5, comment: '' })}
-                      className="rounded border border-[#f36f21] px-2 py-1 text-xs text-[#f36f21] hover:bg-orange-50">
-                      ⭐ Rate Driver
-                    </button>
+                    ratedOrders.has(o.Dlvry_Id) ? (
+                      <button onClick={() => deleteRating(o.Dlvry_Id)}
+                        className="rounded border border-red-300 px-2 py-1 text-xs text-red-500 hover:bg-red-50">
+                        🗑️ Delete Rating
+                      </button>
+                    ) : (
+                      <button onClick={() => setRating({ open: true, order: o, score: 5, comment: '' })}
+                        className="rounded border border-[#f36f21] px-2 py-1 text-xs text-[#f36f21] hover:bg-orange-50">
+                        ⭐ Rate Driver
+                      </button>
+                    )
                   )}
                   {o.Dlvry_Stat === 'Pending' && (
                     <button onClick={() => cancelOrder(o.Dlvry_Id)}
@@ -689,31 +747,52 @@ const DEMO_DRIVERS = [
   { id: 4, name: 'Ana Gomez',      status: 'Available', vehicle_type: '1000 kg Truck',          vehicle_emoji: '🚚', avg_rating: 4.3, total_deliveries: 67,  completion_rate: 88, is_favorite: false, is_blocked: false },
 ];
 
-function DriversTab() {
+function vehicleEmojiForType(type) {
+  switch (type) {
+    case 'Motorcycle': return '🛵';
+    case '200 kg Sedan': return '🚗';
+    case '300 kg Small Crossover SUV': return '🚙';
+    case '600 kg 7-seater SUV/Minivan': return '🚐';
+    case '1000 kg Truck': return '🚚';
+    default: return '🚘';
+  }
+}
+
+function DriversTab({ orders }) {
   const [section, setSection]   = useState('All Drivers');
   const [drivers, setDrivers]   = useState([]);
   const [search, setSearch]     = useState('');
   const [loading, setLoading]   = useState(true);
 
-  const load = async (searchTerm = '') => {
-    setLoading(true);
-    try {
-      const res  = await fetch(`${API}/get_available_drivers.php`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ search: searchTerm, filters: {} }),
-      });
-      const data = await res.json();
-      if (data.success && data.drivers.length > 0) setDrivers(data.drivers);
-      else setDrivers(DEMO_DRIVERS);
-    } catch { setDrivers(DEMO_DRIVERS); }
-    setLoading(false);
-  };
+  useEffect(() => {
+    const assigned = orders
+      .filter(order => order.Dlvry_DrvId && order.driver_name)
+      .reduce((list, order) => {
+        if (list.some(driver => driver.id === order.Dlvry_DrvId)) return list;
 
-  useEffect(() => { load(); }, []);
+        const vehicleType = order.driver_vehicle_type || 'Vehicle not set';
+        list.push({
+          id: order.Dlvry_DrvId,
+          name: order.driver_name,
+          phone: order.driver_phone || 'N/A',
+          status: order.driver_status || 'Busy',
+          vehicle_type: vehicleType,
+          vehicle_emoji: vehicleEmojiForType(vehicleType),
+          avg_rating: 4.5,
+          total_deliveries: 1,
+          completion_rate: order.Dlvry_Stat === 'Completed' ? 100 : 90,
+          is_favorite: false,
+          is_blocked: false,
+        });
+        return list;
+      }, []);
+
+    setDrivers(assigned);
+    setLoading(false);
+  }, [orders]);
 
   const handleSearch = (e) => {
     setSearch(e.target.value);
-    load(e.target.value);
   };
 
   const handleFavoriteToggle = (id, val) => {
@@ -724,6 +803,8 @@ function DriversTab() {
   };
 
   const displayed = drivers.filter(d => {
+    const matchesSearch = !search || d.name.toLowerCase().includes(search.toLowerCase());
+    if (!matchesSearch) return false;
     if (section === 'Favorites') return d.is_favorite && !d.is_blocked;
     if (section === 'Blocked')   return d.is_blocked;
     return !d.is_blocked;
@@ -758,10 +839,10 @@ function DriversTab() {
             <div className="flex flex-col items-center py-20">
               <div className="mb-4 text-6xl">{section === 'Favorites' ? '⭐' : section === 'Blocked' ? '🚫' : '🚗'}</div>
               <p className="font-semibold text-slate-700">
-                {section === 'Favorites' ? 'No favorite drivers yet' : section === 'Blocked' ? 'No blocked drivers' : 'No drivers found'}
+                {section === 'Favorites' ? 'No favorite drivers yet' : section === 'Blocked' ? 'No blocked drivers' : 'No assigned driver yet'}
               </p>
               <p className="mt-1 text-sm text-slate-400">
-                {section === 'Favorites' ? 'Star a driver to add them here.' : section === 'Blocked' ? 'Block a driver to add them here.' : 'Try a different search.'}
+                {section === 'Favorites' ? 'Star a driver to add them here.' : section === 'Blocked' ? 'Block a driver to add them here.' : 'This tab will show only the driver who accepted your order.'}
               </p>
             </div>
           ) : (
@@ -817,13 +898,34 @@ function RewardsTab({ orders }) {
 export default function CustomerDashboard({ user, onLogout }) {
   const [activeTab, setActiveTab] = useState('Place Order');
   const [orders, setOrders] = useState([]);
+  const [ordersLoaded, setOrdersLoaded] = useState(false);
 
   useEffect(() => {
     fetch(`${API}/get_orders.php`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ role: 'customer', user_id: user.id }),
-    }).then(r => r.json()).then(d => { if (d.success) setOrders(d.orders); }).catch(() => { });
-  }, [activeTab]);
+    })
+      .then(r => r.json())
+      .then(d => {
+        if (d.success) setOrders(d.orders);
+        else setOrders(DEMO_ORDERS); // fallback so demo mode still works
+        setOrdersLoaded(true);
+      })
+      .catch(() => { setOrders(DEMO_ORDERS); setOrdersLoaded(true); });
+  }, []);
+
+  // Has at least one delivery in history (any status counts)
+  const hasOrderHistory = orders.length > 0;
+
+  // If Drivers tab is active but customer has no history, redirect to Place Order
+  useEffect(() => {
+    if (ordersLoaded && activeTab === 'Drivers' && !hasOrderHistory) {
+      setActiveTab('Place Order');
+    }
+  }, [ordersLoaded, hasOrderHistory, activeTab]);
+
+  // Only show Drivers tab if customer has order history
+  const visibleTabs = TABS.filter(tab => tab !== 'Drivers' || hasOrderHistory);
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-white font-['Rubik']">
@@ -833,7 +935,7 @@ export default function CustomerDashboard({ user, onLogout }) {
             <svg width="18" height="18" viewBox="0 0 40 40" fill="none"><path d="M28 12l-6 4-2-4-4 2 3 5-7 9h6l3-4 4 2 5-8-2-6z" fill="white" /></svg>
           </div>
           <nav className="flex items-center">
-            {TABS.map(tab => (
+            {visibleTabs.map(tab => (
               <button key={tab} onClick={() => setActiveTab(tab)}
                 className={`border-b-2 px-4 py-4 text-sm font-medium transition ${activeTab === tab ? 'border-[#f36f21] text-[#f36f21]' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
                 {tab}
@@ -853,7 +955,7 @@ export default function CustomerDashboard({ user, onLogout }) {
         {activeTab === 'Place Order' && <PlaceOrderTab user={user} />}
         {activeTab === 'Records' && <RecordsTab user={user} />}
         {activeTab === 'Wallet' && <WalletTab user={user} />}
-        {activeTab === 'Drivers'     && <DriversTab user={user} />}
+        {activeTab === 'Drivers'     && <DriversTab orders={orders} />}
         {activeTab === 'Rewards' && <RewardsTab orders={orders} />}
       </div>
 

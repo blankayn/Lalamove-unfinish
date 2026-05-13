@@ -16,14 +16,23 @@ if (!$custId || !$pickup || !$dropoff || !$item) {
     exit;
 }
 
-// Insert delivery
-$stmt = $pdo->prepare('INSERT INTO DELIVERY (Dlvry_CustId, Dlvry_Pick, Dlvry_Drop, Dlvry_Item, Dlvry_Dist, Dlvry_Fee, Dlvry_Stat) VALUES (?,?,?,?,?,?,?)');
-$stmt->execute([$custId, $pickup, $dropoff, $item, $dist, $fee, 'Pending']);
-$deliveryId = $pdo->lastInsertId();
+try {
+    $pdo->beginTransaction();
 
-// Insert payment record
-$stmt2 = $pdo->prepare('INSERT INTO PAYMENT (Pay_DlvryId, Pay_CustPaymeth, Pay_Amt, Pay_Stat) VALUES (?,?,?,?)');
-$stmt2->execute([$deliveryId, $paymeth, $fee, 'Pending']);
+    // Insert delivery
+    $stmt = $pdo->prepare('INSERT INTO DELIVERY (Dlvry_CustId, Dlvry_Pick, Dlvry_Drop, Dlvry_Item, Dlvry_Dist, Dlvry_Fee, Dlvry_Stat) VALUES (?,?,?,?,?,?,?)');
+    $stmt->execute([$custId, $pickup, $dropoff, $item, $dist, $fee, 'Pending']);
+    $deliveryId = $pdo->lastInsertId();
 
-echo json_encode(['success' => true, 'message' => 'Order placed successfully.', 'delivery_id' => $deliveryId]);
+    // Insert payment record
+    $stmt2 = $pdo->prepare('INSERT INTO PAYMENT (Pay_DlvryId, Pay_CustPaymeth, Pay_Amt, Pay_Stat) VALUES (?,?,?,?)');
+    $stmt2->execute([$deliveryId, $paymeth, $fee, 'Pending']);
+
+    $pdo->commit();
+    echo json_encode(['success' => true, 'message' => 'Order placed successfully.', 'delivery_id' => $deliveryId]);
+} catch (PDOException $e) {
+    $pdo->rollBack();
+    http_response_code(500);
+    echo json_encode(['success' => false, 'message' => 'Failed to place order. Please try again.']);
+}
 ?>
